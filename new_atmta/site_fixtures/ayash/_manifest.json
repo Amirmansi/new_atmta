@@ -1,0 +1,16 @@
+{
+  "site": "ayash.atmta-erp.com",
+  "site_key": "ayash",
+  "exported_at": "2026-06-16 14:08:11.468211",
+  "totals": {
+    "Custom Field": 174,
+    "Property Setter": 164,
+    "Client Script": 5,
+    "Server Script": 2,
+    "Print Format": 14,
+    "Custom DocPerm": 8,
+    "Report": 0,
+    "Custom DocType": 0
+  },
+  "grand_total": 367
+}

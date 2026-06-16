@@ -1,0 +1,16 @@
+{
+  "site": "tagmir.atmta-erp.com",
+  "site_key": "tagmir",
+  "exported_at": "2026-06-16 14:08:12.975931",
+  "totals": {
+    "Custom Field": 350,
+    "Property Setter": 251,
+    "Client Script": 10,
+    "Server Script": 2,
+    "Print Format": 21,
+    "Custom DocPerm": 326,
+    "Report": 0,
+    "Custom DocType": 0
+  },
+  "grand_total": 960
+}

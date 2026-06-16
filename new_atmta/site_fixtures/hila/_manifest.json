@@ -1,0 +1,16 @@
+{
+  "site": "hila.atmta-erp.com",
+  "site_key": "hila",
+  "exported_at": "2026-06-16 14:08:12.250399",
+  "totals": {
+    "Custom Field": 199,
+    "Property Setter": 233,
+    "Client Script": 6,
+    "Server Script": 2,
+    "Print Format": 1,
+    "Custom DocPerm": 335,
+    "Report": 0,
+    "Custom DocType": 0
+  },
+  "grand_total": 776
+}

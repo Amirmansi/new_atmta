@@ -1,0 +1,16 @@
+{
+  "site": "atmta-finance.atmta-erp.com",
+  "site_key": "atmta_finance",
+  "exported_at": "2026-06-16 14:08:11.317876",
+  "totals": {
+    "Custom Field": 310,
+    "Property Setter": 259,
+    "Client Script": 9,
+    "Server Script": 2,
+    "Print Format": 16,
+    "Custom DocPerm": 425,
+    "Report": 12,
+    "Custom DocType": 0
+  },
+  "grand_total": 1033
+}

@@ -1,0 +1,16 @@
+{
+  "site": "striangle.atmta-erp.com",
+  "site_key": "striangle",
+  "exported_at": "2026-06-16 14:08:12.500149",
+  "totals": {
+    "Custom Field": 403,
+    "Property Setter": 242,
+    "Client Script": 11,
+    "Server Script": 7,
+    "Print Format": 22,
+    "Custom DocPerm": 434,
+    "Report": 0,
+    "Custom DocType": 0
+  },
+  "grand_total": 1119
+}

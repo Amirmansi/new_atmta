@@ -1,0 +1,16 @@
+{
+  "site": "btack.atmta-erp.com",
+  "site_key": "btack",
+  "exported_at": "2026-06-16 14:08:11.690369",
+  "totals": {
+    "Custom Field": 211,
+    "Property Setter": 234,
+    "Client Script": 6,
+    "Server Script": 2,
+    "Print Format": 1,
+    "Custom DocPerm": 335,
+    "Report": 0,
+    "Custom DocType": 0
+  },
+  "grand_total": 789
+}

@@ -1,0 +1,102 @@
+[
+  {
+    "doctype": "Client Script",
+    "name": "Company Currency",
+    "idx": 0,
+    "dt": "Expense Entry",
+    "view": "Form",
+    "module": "Erp Expenses",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Expense Entry', {\r\n    company(frm) {\r\n        // Check if a company is selected\r\n        if (frm.doc.company) {\r\n            // Fetch the default currency for the selected company\r\n            frappe.db.get_value('Company', frm.doc.company, 'default_currency', (r) => {\r\n                if (r && r.default_currency) {\r\n                    const currency = r.default_currency;\r\n\r\n                    // Update the label of the 'paid_amount' field\r\n                    const paid_amount_label = `Paid Amount (${currency})`;\r\n                    frm.set_df_property('paid_amount', 'label', paid_amount_label);\r\n\r\n                    // Update the label of the 'total_taxable_amount' field\r\n                    const taxable_amount_label = `Total Taxable Amount (${currency})`;\r\n                    frm.set_df_property('total_taxable_amount', 'label', taxable_amount_label);\r\n\r\n                    // Update the label of the 'total_vat' field\r\n                    const vat_label = `Total VAT (${currency})`;\r\n                    frm.set_df_property('total_vat', 'label', vat_label);\r\n                }\r\n            });\r\n        }\r\n    },\r\n\r\n    onload(frm) {\r\n        // When the form loads, set the labels based on the selected company if already set\r\n        if (frm.doc.company) {\r\n            frappe.db.get_value('Company', frm.doc.company, 'default_currency', (r) => {\r\n                if (r && r.default_currency) {\r\n                    const currency = r.default_currency;\r\n\r\n                    // Set the labels dynamically for the fields\r\n                    const paid_amount_label = `Paid Amount (${currency})`;\r\n                    frm.set_df_property('paid_amount', 'label', paid_amount_label);\r\n\r\n                    const taxable_amount_label = `Total Taxable Amount (${currency})`;\r\n                    frm.set_df_property('total_taxable_amount', 'label', taxable_amount_label);\r\n\r\n                    const vat_label = `Total VAT (${currency})`;\r\n                    frm.set_df_property('total_vat', 'label', vat_label);\r\n                }\r\n            });\r\n        }\r\n    }\r\n});\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Dynamically Fetches",
+    "idx": 0,
+    "dt": "Expense Entry",
+    "view": "Form",
+    "module": "Erp Expenses",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Expense Entry', {\r\n    // Trigger before saving the form to ensure all rows in the child table are updated\r\n    before_save: function (frm) {\r\n        frm.fields_dict.expense_entry_account.grid.grid_rows.forEach(row => {\r\n            calculate_vat_amount(row.doc, frm);\r\n        });\r\n    }\r\n});\r\n\r\nfrappe.ui.form.on('expense_entry_account', {\r\n    // Trigger when taxable_amount changes\r\n    taxable_amount: function (frm, cdt, cdn) {\r\n        let row = locals[cdt][cdn];\r\n        if (row.taxable_amount) {\r\n            calculate_vat_amount(row, frm);\r\n        }\r\n    },\r\n\r\n    // Trigger when vat_rate changes\r\n    vat_rate: function (frm, cdt, cdn) {\r\n        let row = locals[cdt][cdn];\r\n        if (row.vat_rate) {\r\n            calculate_vat_amount(row, frm);\r\n        }\r\n    }\r\n});\r\n\r\n// Helper function to calculate VAT Amount\r\nfunction calculate_vat_amount(row, frm) {\r\n    if (row.taxable_amount && row.vat_rate) {\r\n        // Calculate VAT Amount as taxable_amount * vat_rate / 100\r\n        let vat_amount = (row.taxable_amount * row.vat_rate) / 100;\r\n        frappe.model.set_value(row.doctype, row.name, 'vat_amount', vat_amount);\r\n    } else {\r\n        // Clear vat_amount if taxable_amount or vat_rate is missing\r\n        frappe.model.set_value(row.doctype, row.name, 'vat_amount', 0);\r\n    }\r\n}\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Expense Entry",
+    "idx": 0,
+    "dt": "Expense Entry",
+    "view": "Form",
+    "module": "Erp Expenses",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Expense Entry', {\r\n    before_save: function (frm) {\r\n        if (!frm.doc.naming_series && frm.doc.posting_date) {\r\n            const date = frappe.datetime.str_to_obj(frm.doc.posting_date);\r\n            const year = date.getFullYear();\r\n            const month = String(date.getMonth() + 1).padStart(2, '0');\r\n            const prefix = `EXPE-${year}-${month}-`;\r\n\r\n            frappe.call({\r\n                method: \"frappe.client.get_list\",\r\n                args: {\r\n                    doctype: \"Expense Entry\",\r\n                    fields: [\"name\"],\r\n                    filters: [[\"name\", \"like\", `${prefix}%`]],\r\n                    order_by: \"name desc\",\r\n                    limit_page_length: 1\r\n                },\r\n                callback: function (r) {\r\n                    let next_number = 1;\r\n                    if (r.message.length) {\r\n                        const last_number = parseInt(r.message[0].name.split(\"-\")[3]);\r\n                        if (!isNaN(last_number)) {\r\n                            next_number = last_number + 1;\r\n                        }\r\n                    }\r\n                    const new_name = prefix + String(next_number).padStart(5, '0');\r\n                    frm.set_value(\"naming_series\", new_name);\r\n                }\r\n            });\r\n        }\r\n    }\r\n});\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Expense Entry Fields Calculation",
+    "idx": 0,
+    "dt": "Expense Entry",
+    "view": "Form",
+    "module": "Erp Expenses",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Expense Entry', {\r\n    // Trigger before saving the document\r\n    before_save: function (frm) {\r\n        update_totals(frm);\r\n        enhance_paid_amount_field(frm);\r\n    },\r\n\r\n    // Trigger on form refresh to ensure totals and styles are updated\r\n    refresh: function (frm) {\r\n        update_totals(frm);\r\n        enhance_paid_amount_field(frm);\r\n    }\r\n});\r\n\r\nfrappe.ui.form.on('expense_entry_account', {\r\n    // Trigger when taxable_amount changes\r\n    taxable_amount: function (frm, cdt, cdn) {\r\n        update_totals(frm);\r\n    },\r\n\r\n    // Trigger when vat_amount changes\r\n    vat_amount: function (frm, cdt, cdn) {\r\n        update_totals(frm);\r\n    }\r\n});\r\n\r\n// Helper Function to Update Totals\r\nfunction update_totals(frm) {\r\n    let total_taxable_amount = 0;\r\n    let total_vat = 0;\r\n\r\n    // Loop through all rows in the child table\r\n    frm.doc.expense_entry_account.forEach(row => {\r\n        total_taxable_amount += row.taxable_amount || 0;\r\n        total_vat += row.vat_amount || 0;\r\n    });\r\n\r\n    // Set the calculated totals\r\n    frm.set_value('total_taxable_amount', total_taxable_amount);\r\n    frm.set_value('total_vat', total_vat);\r\n}\r\n\r\n// Helper Function to Enhance the Paid Amount Field\r\nfunction enhance_paid_amount_field(frm) {\r\n    // Automatically calculate paid_amount as SUM(taxable_amount + vat_rate)\r\n    const total_taxable_amount = frm.doc.total_taxable_amount || 0;\r\n    const total_vat = frm.doc.total_vat || 0;\r\n    const calculated_paid_amount = total_taxable_amount + total_vat;\r\n\r\n    frm.set_value('paid_amount', calculated_paid_amount);\r\n\r\n    let status = 'Not Paid';\r\n    let color = 'rgb(255, 100, 100)'; // Light red for not paid\r\n\r\n    if (calculated_paid_amount > 0) {\r\n        status = 'Fully Paid';\r\n        color = 'rgb(100, 255, 100)'; // Light green for fully paid\r\n    }\r\n\r\n    // Apply styles to paid_amount field dynamically\r\n    frm.fields_dict.paid_amount.$wrapper.css({\r\n        backgroundColor: color,\r\n        color: '#333', // Dark text for better readability\r\n        padding: '5px',\r\n        borderRadius: '8px',\r\n        fontWeight: 'bold',\r\n        textAlign: 'center',\r\n        transition: '0.3s ease-in-out' // Smooth hover effect\r\n    });\r\n\r\n    // Add tooltip with payment status\r\n    frm.fields_dict.paid_amount.$wrapper.attr('title', `Payment Status: ${status}`);\r\n\r\n    // Add hover effect\r\n    frm.fields_dict.paid_amount.$wrapper.hover(\r\n        function () {\r\n            $(this).css('boxShadow', '0 0 8px rgba(0,0,0,0.3)');\r\n        },\r\n        function () {\r\n            $(this).css('boxShadow', 'none');\r\n        }\r\n    );\r\n}\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Expense Entry GL",
+    "idx": 0,
+    "dt": "Expense Entry",
+    "view": "Form",
+    "module": "Erp Expenses",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Expense Entry', {\r\n    refresh: function(frm) {\r\n        // Show the Accounting Ledger button only after the document is submitted\r\n        if (frm.doc.__islocal || !frm.doc.docstatus || frm.doc.docstatus < 1) {\r\n            // If the document is not submitted, hide the button\r\n            return;\r\n        }\r\n\r\n        // Add the Accounting Ledger button if the document is submitted\r\n        frm.add_custom_button(__('Accounting Ledger'), function() {\r\n            // Check if a Journal Entry has been created\r\n            if (!frm.doc.journal_entry_name) {\r\n                frappe.msgprint(__('Please create a Journal Entry before accessing the General Ledger.'));\r\n                return;\r\n            }\r\n\r\n            // Build the URL for the General Ledger report with dynamic filters\r\n            let company = frm.doc.company || ''; // Use company from the Expense Entry form\r\n            let from_date = frm.doc.date || '';   // Use date from the Expense Entry form\r\n            let to_date = frm.doc.date || '';     // Use date from the Expense Entry form\r\n            let voucher_no = frm.doc.journal_entry_name || ''; // Journal Entry Name to filter\r\n\r\n            // Construct the URL with query parameters\r\n            let url = `/app/query-report/General%20Ledger?company=${encodeURIComponent(company)}&from_date=${encodeURIComponent(from_date)}&to_date=${encodeURIComponent(to_date)}&voucher_no=${encodeURIComponent(voucher_no)}&include_dimensions=1&include_default_book_entries=1`;\r\n\r\n            // Open the General Ledger report in a new tab\r\n            window.open(url, '_blank');\r\n        });\r\n    }\r\n});\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Purchase Invoice CS",
+    "idx": 0,
+    "dt": "Purchase Invoice",
+    "view": "Form",
+    "module": null,
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Purchase Invoice', {\n refresh(frm) {\n        sync_cost_center(frm);\n    },\n    cost_center(frm) {\n        sync_cost_center(frm);\n    },\n    validate(frm) {\n        sync_cost_center(frm);\n    },\n    on_submit(frm) {\n        sync_cost_center(frm);\n    }\n});\n\nfunction sync_cost_center(frm) {\n    if (!frm.doc.cost_center) return;\n\n    // Update items table\n    frm.doc.items.forEach(item => {\n        item.cost_center = frm.doc.cost_center;\n    });\n\n    // Update taxes table\n    frm.doc.taxes.forEach(tax => {\n        tax.cost_center = frm.doc.cost_center;\n    });\n\n    frm.refresh_field('items');\n    frm.refresh_field('taxes');\n}\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "cost_center",
+    "idx": 0,
+    "dt": "Sales Invoice",
+    "view": "Form",
+    "module": null,
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Sales Invoice', {\r\n    refresh(frm) {\r\n        sync_cost_center(frm);\r\n    },\r\n    cost_center(frm) {\r\n        sync_cost_center(frm);\r\n    },\r\n    validate(frm) {\r\n        sync_cost_center(frm);\r\n    },\r\n    on_submit(frm) {\r\n        sync_cost_center(frm);\r\n    }\r\n});\r\n\r\nfunction sync_cost_center(frm) {\r\n    if (!frm.doc.cost_center) return;\r\n\r\n    // Update items table\r\n    frm.doc.items.forEach(item => {\r\n        item.cost_center = frm.doc.cost_center;\r\n    });\r\n\r\n    // Update taxes table\r\n    frm.doc.taxes.forEach(tax => {\r\n        tax.cost_center = frm.doc.cost_center;\r\n    });\r\n\r\n    frm.refresh_field('items');\r\n    frm.refresh_field('taxes');\r\n}\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Sales Invoice tax",
+    "idx": 0,
+    "dt": "Sales Invoice",
+    "view": "Form",
+    "module": null,
+    "enabled": 0,
+    "script": "frappe.ui.form.on('Sales Invoice', {\r\n    validate(frm) {\r\n        // Round parent fields\r\n        [\r\n            'total',\r\n            'grand_total',\r\n            'rounded_total',\r\n            'total_taxes_and_charges',\r\n            'net_total'\r\n        ].forEach(field => {\r\n            if (frm.doc[field]) {\r\n                frm.doc[field] = flt(frm.doc[field], 2);\r\n            }\r\n        });\r\n\r\n        // Round item fields (excluding qty)\r\n        frm.doc.items.forEach(item => {\r\n            [\r\n                'rate',\r\n                'amount',\r\n                'base_rate',\r\n                'base_amount',\r\n                'discount_percentage',\r\n                'price_list_rate'\r\n            ].forEach(field => {\r\n                if (item[field]) {\r\n                    item[field] = flt(item[field], 2);\r\n                }\r\n            });\r\n        });\r\n\r\n        // Round tax fields\r\n        (frm.doc.taxes || []).forEach(tax => {\r\n            [\r\n                'tax_amount',\r\n                'base_tax_amount',\r\n                'tax_amount_after_discount_amount',\r\n                'total',\r\n                'base_total'\r\n            ].forEach(field => {\r\n                if (tax[field]) {\r\n                    tax[field] = flt(tax[field], 2);\r\n                }\r\n            });\r\n        });\r\n\r\n        frm.refresh_fields();\r\n    }\r\n});\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "WhatsApp Sales Invoice",
+    "idx": 0,
+    "dt": "Sales Invoice",
+    "view": "Form",
+    "module": "ATMTA App ERP Development",
+    "enabled": 1,
+    "script": "frappe.ui.form.on('Sales Invoice', {\r\n    after_save: function (frm) {\r\n        if (frm.doc.docstatus === 1) {\r\n            frappe.confirm(\r\n                `<div style=\"font-size: 14px; line-height: 1.8;\">\r\n                    <strong style=\"color: #007BFF;\">Do you want to send this invoice via WhatsApp?</strong><br>\r\n                    <span style=\"color: #6C757D;\">A PDF copy of the invoice will be sent to the customer.</span><br><br>\r\n                    <strong style=\"color: #007BFF;\">هل ترغب في إرسال هذه الفاتورة عبر الواتساب؟</strong><br>\r\n                    <span style=\"color: #6C757D;\">سيتم إرسال نسخة PDF من الفاتورة إلى العميل.</span>\r\n                </div>`,\r\n                function () {\r\n                    send_sales_invoice_pdf_on_whatsapp(frm);\r\n                },\r\n                function () {\r\n                    frappe.msgprint(__('WhatsApp message was not sent. لم يتم إرسال رسالة الواتساب.'));\r\n                },\r\n                {\r\n                    primary: '📲 Send Now | إرسال الآن',\r\n                    primary_color: '#25D366',\r\n                    secondary: 'Not Now | ليس الآن',\r\n                    secondary_color: '#6C757D'\r\n                }\r\n            );\r\n        }\r\n    },\r\n\r\n    refresh: function (frm) {\r\n        if (frm.doc.docstatus === 1) {\r\n            frm.add_custom_button(__('📲 Send on WhatsApp | إرسال على واتساب'), function () {\r\n                send_sales_invoice_pdf_on_whatsapp(frm);\r\n            }).css({\r\n                'background-color': '#25D366',\r\n                'color': 'white',\r\n                'font-weight': 'bold',\r\n                'border-radius': '6px',\r\n                'padding': '6px 12px',\r\n                'font-size': '13px'\r\n            });\r\n        }\r\n    }\r\n});\r\n\r\nfunction send_sales_invoice_pdf_on_whatsapp(frm) {\r\n    frappe.call({\r\n        method: 'frappe.client.get_value',\r\n        args: {\r\n            doctype: 'Customer',\r\n            filters: { name: frm.doc.customer },\r\n            fieldname: 'mobile_no'\r\n        },\r\n        callback: function (response) {\r\n            let number = response.message ? response.message.mobile_no : null;\r\n\r\n            if (!number) {\r\n                frappe.msgprint(__('Customer WhatsApp number is not available. رقم واتساب العميل غير متوفر.'));\r\n                return;\r\n            }\r\n\r\n            let digits = number.replace(/\\D/g, '');\r\n\r\n            // Convert to international format if local (Saudi)\r\n            if (digits.startsWith('0')) {\r\n                digits = '+966' + digits.slice(1);\r\n            } else if (digits.startsWith('966')) {\r\n                digits = '+' + digits;\r\n            } else if (!digits.startsWith('+')) {\r\n                digits = '+966' + digits;\r\n            }\r\n\r\n            if (digits.length < 12) {\r\n                frappe.msgprint(__('Invalid WhatsApp number. رقم الواتساب غير صالح.'));\r\n                return;\r\n            }\r\n\r\n            const base_url = window.location.origin;\r\n            const pdf_url = `${base_url}/api/method/frappe.utils.print_format.download_pdf` +\r\n                `?doctype=Sales%20Invoice&name=${encodeURIComponent(frm.doc.name)}` +\r\n                `&format=طباعه%20pos%20مبيعات&no_letterhead=0&letterhead=Letter%20Heads&_lang=ar`;\r\n\r\n            const message = `🧾 *Sales Invoice PDF | رابط الفاتورة:*\\n${pdf_url}`;\r\n            const whatsapp_url = `https://web.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(message)}`;\r\n\r\n            window.open(whatsapp_url, '_blank');\r\n        },\r\n        error: function (error) {\r\n            console.error('Error fetching WhatsApp number:', error);\r\n            frappe.msgprint(__('An error occurred while fetching the WhatsApp number. حدث خطأ أثناء جلب رقم الواتساب.'));\r\n        }\r\n    });\r\n}\r\n"
+  },
+  {
+    "doctype": "Client Script",
+    "name": "Workspace",
+    "idx": 0,
+    "dt": "Workspace",
+    "view": "Form",
+    "module": null,
+    "enabled": 0,
+    "script": "frappe.ui.form.on('Workspace', {\r\n    refresh(frm) {\r\n        if (frm.doc.title) {\r\n            frm.set_value('title', __(frm.doc.title));\r\n        }\r\n    }\r\n});\r\n"
+  }
+]

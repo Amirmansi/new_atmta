@@ -1,0 +1,16 @@
+{
+  "site": "gazzal.atmta-erp.com",
+  "site_key": "gazzal",
+  "exported_at": "2026-06-16 14:08:12.034037",
+  "totals": {
+    "Custom Field": 279,
+    "Property Setter": 270,
+    "Client Script": 10,
+    "Server Script": 3,
+    "Print Format": 18,
+    "Custom DocPerm": 554,
+    "Report": 4,
+    "Custom DocType": 1
+  },
+  "grand_total": 1139
+}
