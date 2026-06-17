@@ -1,0 +1,67 @@
+/* ATMTA Desk — smooth transitions, theme-aware (nxt_theme compatible) */
+
+.atmta-route-loader {
+	position: fixed;
+	top: 0;
+	left: 0;
+	height: 2px;
+	width: 0;
+	z-index: 99999;
+	background: linear-gradient(
+		90deg,
+		var(--primary, #2493ef),
+		var(--primary-color, #38bdf8),
+		var(--primary, #2493ef)
+	);
+	background-size: 200% 100%;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+	pointer-events: none;
+	animation: atmta-loader-shimmer 1s linear infinite;
+}
+
+.atmta-route-loader.active {
+	opacity: 1;
+	width: 70%;
+	transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.08s ease;
+}
+
+/* Subtle fade on main content during route change */
+body:not(.atmta-page-ready) .layout-main-section-wrapper,
+body:not(.atmta-page-ready) .layout-main-section {
+	opacity: 0.94;
+}
+
+body.atmta-page-ready .layout-main-section-wrapper,
+body.atmta-page-ready .layout-main-section {
+	opacity: 1;
+	transition: opacity 0.15s ease;
+}
+
+/* Sidebar hover — instant feel without layout shift */
+.workspace-sidebar .sidebar-item-container a.item-anchor,
+.desk-sidebar .standard-sidebar-item .item-anchor,
+.sidebar-item-container .sidebar-item-label {
+	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+/* Workspace cards */
+.ce-block .widget-group .widget {
+	transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.atmta-route-loader,
+	body.atmta-page-ready .layout-main-section-wrapper,
+	body.atmta-page-ready .layout-main-section,
+	body:not(.atmta-page-ready) .layout-main-section-wrapper,
+	body:not(.atmta-page-ready) .layout-main-section {
+		transition: none;
+		animation: none;
+	}
+}
+
+@keyframes atmta-loader-shimmer {
+	0% { background-position: 200% 0; }
+	100% { background-position: -200% 0; }
+}

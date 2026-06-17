@@ -14,7 +14,8 @@ import json
 import os
 import frappe
 
-APP_FIXTURES_BASE = "/home/frappe/frappe-bench/apps/new_atmta/new_atmta/site_fixtures"
+def _fixtures_base():
+    return frappe.get_app_path("new_atmta", "site_fixtures")
 
 SITE_KEY_MAP = {
     "andal.atmta-erp.com":          "andal",
@@ -28,6 +29,7 @@ SITE_KEY_MAP = {
     "tagmira.atmta-erp.com":        "tagmira",
     "tagmir.atmta-erp.com":         "tagmir",
     "training.atmta-erp.com":       "training",
+    "rolsfac.atmta-erp.com":        "rolsfac",
 }
 
 IMPORT_ORDER = [
@@ -49,7 +51,7 @@ def get_site_key():
 
 def get_fixtures_dir():
     site_key = get_site_key()
-    return os.path.join(APP_FIXTURES_BASE, site_key)
+    return os.path.join(_fixtures_base(), site_key)
 
 
 def _import_custom_doctypes(filepath, force=False):
