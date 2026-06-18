@@ -55,9 +55,6 @@ ACCOUNTING_RESET_DOCTYPES = [
 	"Account",
 	"Journal Entry",
 	"Journal Entry Account",
-	"Payment Entry",
-	"Payment Entry Reference",
-	"Payment Entry Deduction",
 	"Advance Taxes and Charges",
 ]
 
@@ -270,10 +267,11 @@ def clean_property_setters_field_order(removed_fieldnames: set[str]) -> dict:
 		removed_fieldnames = set()
 
 	# Remove property setters for deleted/orphan fields (e.g. posa_*).
-	if removed_fieldnames:
+	generic_removed_fieldnames = removed_fieldnames - {"cost_center"}
+	if generic_removed_fieldnames:
 		for row in frappe.get_all(
 			"Property Setter",
-			filters=[["field_name", "in", list(removed_fieldnames)]],
+			filters=[["field_name", "in", list(generic_removed_fieldnames)]],
 			pluck="name",
 		):
 			frappe.delete_doc("Property Setter", row, ignore_permissions=True)
@@ -290,10 +288,22 @@ def clean_property_setters_field_order(removed_fieldnames: set[str]) -> dict:
 	for row in frappe.get_all(
 		"Property Setter",
 		filters={"property": "field_order"},
-		pluck="name",
+		fields=["name", "doc_type", "value"],
 	):
-		frappe.delete_doc("Property Setter", row, ignore_permissions=True)
-		stats["property_setters_removed"] += 1
+		if row.doc_type in MASTER_LAYOUT_DOCTYPES:
+			frappe.delete_doc("Property Setter", row.name, ignore_permissions=True)
+			stats["property_setters_removed"] += 1
+			continue
+		try:
+			fields = json.loads(row.value or "[]")
+		except json.JSONDecodeError:
+			continue
+		if not isinstance(fields, list):
+			continue
+		new_fields = [field for field in fields if field not in removed_fieldnames]
+		if new_fields != fields:
+			frappe.db.set_value("Property Setter", row.name, "value", json.dumps(new_fields))
+			stats["property_setters_updated"] += 1
 
 	frappe.db.commit()
 	return stats
@@ -644,12 +654,18 @@ def disable_broken_reports() -> dict:
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
 	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
+	{"dt": "Customer", "fieldname": "cost_center", "primary_field": None},
+	{"dt": "Customer", "fieldname": "custom_whatsapp_phone_nubmer", "primary_field": "custom_whatsapp_no"},
 	{
 		"dt": "Customer",
 		"fieldname": "custom_customer_name_in_arabic",
 		"primary_field": "customer_name_in_arabic",
 	},
 	{"dt": "Customer", "fieldname": "custom_customer_name_english", "primary_field": "customer_name"},
+	{"dt": "Supplier", "fieldname": "cost_center", "primary_field": None},
+	{"dt": "Supplier", "fieldname": "custom_supplier_name_english", "primary_field": "supplier_name"},
+	{"dt": "Item", "fieldname": "custom_item_series_no", "primary_field": None},
+	{"dt": "Item", "fieldname": "cost_center", "primary_field": None},
 ]
 
 IMPORTANT_FIELD_VISIBILITY_SETTERS = [
@@ -657,14 +673,39 @@ IMPORTANT_FIELD_VISIBILITY_SETTERS = [
 	{"doc_type": "Sales Invoice", "field_name": "set_warehouse", "property": "hidden"},
 ]
 
+MASTER_LAYOUT_DOCTYPES = ("Customer", "Supplier", "Item")
+
 CUSTOM_FIELD_INSERT_AFTER_FIXES = [
 	{"dt": "Customer", "fieldname": "customer_name_in_arabic", "insert_after": "customer_name"},
+	{"dt": "Customer", "fieldname": "custom_customer_types", "insert_after": "customer_type"},
+	{"dt": "Customer", "fieldname": "custom_whatsapp_no", "insert_after": "mobile_no"},
+	{"dt": "Customer", "fieldname": "custom_section_break_nxdgf", "insert_after": "tax_id"},
+	{"dt": "Customer", "fieldname": "custom_vat_registration_number", "insert_after": "custom_section_break_nxdgf"},
+	{"dt": "Customer", "fieldname": "custom_crn", "insert_after": "custom_vat_registration_number"},
+	{"dt": "Customer", "fieldname": "custom_additional_ids", "insert_after": "custom_crn"},
+	{"dt": "Customer", "fieldname": "default_warehouse", "insert_after": "default_price_list"},
+	{"dt": "Supplier", "fieldname": "supplier_name_in_arabic", "insert_after": "supplier_name"},
+	{"dt": "Supplier", "fieldname": "custom_crn_no", "insert_after": "tax_id"},
+	{"dt": "Supplier", "fieldname": "default_warehouse", "insert_after": "default_price_list"},
+	{"dt": "Item", "fieldname": "item_name_in_arabic", "insert_after": "item_name"},
+	{"dt": "Item", "fieldname": "sku_code", "insert_after": "item_name_in_arabic"},
+	{"dt": "Item", "fieldname": "is_zero_rated", "insert_after": "item_tax_section_break"},
+	{"dt": "Item", "fieldname": "is_exempt", "insert_after": "is_zero_rated"},
+	{"dt": "Item", "fieldname": "print_item_order", "insert_after": "brand"},
+	{"dt": "Item", "fieldname": "custom_section_break_m5v83", "insert_after": "print_item_order"},
+	{"dt": "Item", "fieldname": "packaging", "insert_after": "sales_details"},
+	{"dt": "Item", "fieldname": "custom_discount_allowed", "insert_after": "is_sales_item"},
+	{"dt": "Item", "fieldname": "supplier_item_code", "insert_after": "supplier_details"},
 ]
 
 REMOVED_INSERT_AFTER_TARGETS = {
 	"customer_names": "customer_name",
 	"custom_customer_name_in_arabic": "customer_name",
 	"custom_customer_name_english": "customer_name_in_arabic",
+	"custom_supplier_name_english": "supplier_name_in_arabic",
+	"custom_whatsapp_phone_nubmer": "customer_name",
+	"custom_item_series_no": "naming_series",
+	"cost_center": "default_price_list",
 	"custom_document_no": "bill_no",
 	"document_no": "bill_no",
 }
@@ -760,7 +801,7 @@ def remove_redundant_custom_fields() -> dict:
 			continue
 
 		table = f"tab{dt}"
-		if frappe.db.has_column(dt, fieldname) and frappe.db.has_column(dt, primary):
+		if primary and frappe.db.has_column(dt, fieldname) and frappe.db.has_column(dt, primary):
 			migrated = frappe.db.sql(
 				f"""
 				UPDATE `{table}`
@@ -804,18 +845,41 @@ def remove_redundant_custom_fields() -> dict:
 		) or 0
 
 	frappe.db.commit()
-	frappe.clear_cache(doctype="Customer")
-	frappe.clear_cache(doctype="Purchase Invoice")
+	for doctype in ("Customer", "Supplier", "Item", "Purchase Invoice"):
+		if frappe.db.exists("DocType", doctype):
+			frappe.clear_cache(doctype=doctype)
 	return stats
 
 
 def remove_bad_layout_property_setters() -> dict:
 	"""Remove brittle form layout setters and restore critical standard fields."""
-	stats = {"field_order_removed": 0, "visibility_setters_removed": 0}
+	stats = {
+		"field_order_removed": 0,
+		"master_standard_setters_removed": 0,
+		"visibility_setters_removed": 0,
+	}
 
 	for name in frappe.get_all("Property Setter", filters={"property": "field_order"}, pluck="name"):
 		frappe.delete_doc("Property Setter", name, ignore_permissions=True)
 		stats["field_order_removed"] += 1
+
+	custom_fields = {
+		(row.dt, row.fieldname)
+		for row in frappe.get_all(
+			"Custom Field",
+			filters={"dt": ["in", MASTER_LAYOUT_DOCTYPES]},
+			fields=["dt", "fieldname"],
+		)
+	}
+	for row in frappe.get_all(
+		"Property Setter",
+		filters={"doc_type": ["in", MASTER_LAYOUT_DOCTYPES]},
+		fields=["name", "doc_type", "field_name"],
+	):
+		if row.field_name and (row.doc_type, row.field_name) in custom_fields:
+			continue
+		frappe.delete_doc("Property Setter", row.name, ignore_permissions=True)
+		stats["master_standard_setters_removed"] += 1
 
 	for spec in IMPORTANT_FIELD_VISIBILITY_SETTERS:
 		for name in frappe.get_all("Property Setter", filters=spec, pluck="name"):
@@ -827,6 +891,92 @@ def remove_bad_layout_property_setters() -> dict:
 		if frappe.db.exists("DocType", doctype):
 			frappe.clear_cache(doctype=doctype)
 	return stats
+
+
+def restore_ksa_payment_entry_customizations() -> dict:
+	"""Restore Payment Entry customizations owned by ksa_compliance.
+
+	new_atmta must not own or delete these fields, but it repairs sites where an
+	older cleanup removed them so ksa_compliance can validate prepayment invoices.
+	"""
+	stats = {
+		"applied": False,
+		"custom_fields_created": 0,
+		"custom_fields_updated": 0,
+		"property_setters_created": 0,
+		"property_setters_updated": 0,
+	}
+
+	if "ksa_compliance" not in frappe.get_installed_apps():
+		stats["reason"] = "ksa_compliance not installed"
+		return stats
+
+	try:
+		path = frappe.get_app_path("ksa_compliance", "ksa_compliance", "custom", "payment_entry.json")
+	except Exception as e:
+		stats["reason"] = f"cannot resolve ksa_compliance path: {e}"
+		return stats
+
+	try:
+		with open(path, encoding="utf-8") as f:
+			data = json.load(f)
+	except Exception as e:
+		stats["reason"] = f"cannot read payment_entry.json: {e}"
+		return stats
+
+	for record in data.get("custom_fields") or []:
+		name = record.get("name")
+		if not name:
+			continue
+		doc_data = _clean_import_record(record, "Custom Field")
+		if frappe.db.exists("Custom Field", name):
+			doc = frappe.get_doc("Custom Field", name)
+			doc.update(doc_data)
+			doc.save(ignore_permissions=True)
+			stats["custom_fields_updated"] += 1
+		else:
+			frappe.get_doc(doc_data).insert(ignore_permissions=True)
+			stats["custom_fields_created"] += 1
+
+	for record in data.get("property_setters") or []:
+		name = record.get("name")
+		if not name:
+			continue
+		doc_data = _clean_import_record(record, "Property Setter")
+		if frappe.db.exists("Property Setter", name):
+			doc = frappe.get_doc("Property Setter", name)
+			doc.update(doc_data)
+			doc.save(ignore_permissions=True)
+			stats["property_setters_updated"] += 1
+		else:
+			frappe.get_doc(doc_data).insert(ignore_permissions=True)
+			stats["property_setters_created"] += 1
+
+	frappe.db.commit()
+	frappe.clear_cache(doctype="Payment Entry")
+	stats["applied"] = True
+	return stats
+
+
+def _clean_import_record(record: dict, doctype: str) -> dict:
+	doc_data = {
+		key: value
+		for key, value in record.items()
+		if key
+		not in {
+			"_assign",
+			"_comments",
+			"_liked_by",
+			"_user_tags",
+			"docstatus",
+			"idx",
+			"parent",
+			"parentfield",
+			"parenttype",
+		}
+	}
+	doc_data["doctype"] = doctype
+	return doc_data
 
 
 def ensure_shared_link_doctypes() -> dict:
@@ -1134,6 +1284,7 @@ def run_integrity_fixes() -> dict:
 		"accounting_doctype_reset": remove_accounting_doctype_customizations(),
 		"redundant_fields": remove_redundant_custom_fields(),
 		"layout_property_setters": remove_bad_layout_property_setters(),
+		"ksa_payment_entry": restore_ksa_payment_entry_customizations(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"orphan_fields": remove_orphan_custom_fields(),
 		"striangle_tax_id": enforce_striangle_tax_id(),
@@ -1154,6 +1305,7 @@ def run_all() -> dict:
 		"accounting_doctype_reset": remove_accounting_doctype_customizations(),
 		"redundant_fields": remove_redundant_custom_fields(),
 		"layout_property_setters": remove_bad_layout_property_setters(),
+		"ksa_payment_entry": restore_ksa_payment_entry_customizations(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"precision_setters": remove_precision_property_setters(),
 		"field_precision": ensure_calculation_field_precision(),

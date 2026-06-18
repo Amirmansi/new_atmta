@@ -15,29 +15,64 @@ LINK_NUMERIC_TYPES = {"Float", "Currency", "Percent", "Int"}
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
 	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
+	{"dt": "Customer", "fieldname": "cost_center", "primary_field": None},
+	{"dt": "Customer", "fieldname": "custom_whatsapp_phone_nubmer", "primary_field": "custom_whatsapp_no"},
 	{"dt": "Customer", "fieldname": "custom_customer_name_in_arabic", "primary_field": "customer_name_in_arabic"},
 	{"dt": "Customer", "fieldname": "custom_customer_name_english", "primary_field": "customer_name"},
+	{"dt": "Supplier", "fieldname": "cost_center", "primary_field": None},
+	{"dt": "Supplier", "fieldname": "custom_supplier_name_english", "primary_field": "supplier_name"},
+	{"dt": "Item", "fieldname": "custom_item_series_no", "primary_field": None},
+	{"dt": "Item", "fieldname": "cost_center", "primary_field": None},
 ]
 
 FIELDNAMES_TO_STRIP_FROM_ORDER = {
 	"custom_document_no",
 	"document_no",
 	"customer_names",
+	"cost_center",
+	"custom_item_series_no",
 	"custom_customer_name_in_arabic",
 	"custom_customer_name_english",
+	"custom_supplier_name_english",
+	"custom_whatsapp_phone_nubmer",
 }
 
 CANONICAL_INSERT_AFTER = {
 	("Customer", "customer_name_in_arabic"): "customer_name",
+	("Customer", "custom_customer_types"): "customer_type",
+	("Customer", "custom_whatsapp_no"): "mobile_no",
+	("Customer", "custom_section_break_nxdgf"): "tax_id",
+	("Customer", "custom_vat_registration_number"): "custom_section_break_nxdgf",
+	("Customer", "custom_crn"): "custom_vat_registration_number",
+	("Customer", "custom_additional_ids"): "custom_crn",
+	("Customer", "default_warehouse"): "default_price_list",
+	("Supplier", "supplier_name_in_arabic"): "supplier_name",
+	("Supplier", "custom_crn_no"): "tax_id",
+	("Supplier", "default_warehouse"): "default_price_list",
+	("Item", "item_name_in_arabic"): "item_name",
+	("Item", "sku_code"): "item_name_in_arabic",
+	("Item", "is_zero_rated"): "item_tax_section_break",
+	("Item", "is_exempt"): "is_zero_rated",
+	("Item", "print_item_order"): "brand",
+	("Item", "custom_section_break_m5v83"): "print_item_order",
+	("Item", "packaging"): "sales_details",
+	("Item", "custom_discount_allowed"): "is_sales_item",
+	("Item", "supplier_item_code"): "supplier_details",
 }
 
 REMOVED_INSERT_AFTER_TARGETS = {
 	"customer_names": "customer_name",
 	"custom_customer_name_in_arabic": "customer_name",
 	"custom_customer_name_english": "customer_name_in_arabic",
+	"custom_supplier_name_english": "supplier_name_in_arabic",
+	"custom_whatsapp_phone_nubmer": "customer_name",
+	"custom_item_series_no": "naming_series",
+	"cost_center": "default_price_list",
 	"custom_document_no": "bill_no",
 	"document_no": "bill_no",
 }
+
+MASTER_LAYOUT_DOCTYPES = {"Customer", "Supplier", "Item"}
 
 IMPORTANT_FIELD_VISIBILITY_SETTERS = {
 	("Customer", "default_price_list", "hidden"),
@@ -113,9 +148,11 @@ def _process_property_setter_file(filepath: str, removed_fieldnames: set[str]) -
 
 	updated = 0
 	kept = []
+	custom_fields = _custom_fields_by_doctype(os.path.join(os.path.dirname(filepath), "custom_field.json"))
 	for record in records:
 		field_name = record.get("field_name") or ""
 		property_name = record.get("property") or ""
+		doc_type = record.get("doc_type")
 
 		if property_name == "field_order":
 			updated += 1
@@ -129,7 +166,13 @@ def _process_property_setter_file(filepath: str, removed_fieldnames: set[str]) -
 			updated += 1
 			continue
 
-		if (record.get("doc_type"), field_name, property_name) in IMPORTANT_FIELD_VISIBILITY_SETTERS:
+		if (doc_type, field_name, property_name) in IMPORTANT_FIELD_VISIBILITY_SETTERS:
+			updated += 1
+			continue
+
+		if doc_type in MASTER_LAYOUT_DOCTYPES and (
+			not field_name or field_name not in custom_fields.get(doc_type, set())
+		):
 			updated += 1
 			continue
 
@@ -141,6 +184,19 @@ def _process_property_setter_file(filepath: str, removed_fieldnames: set[str]) -
 			f.write("\n")
 
 	return updated
+
+
+def _custom_fields_by_doctype(filepath: str) -> dict[str, set[str]]:
+	if not os.path.exists(filepath):
+		return {}
+	with open(filepath, encoding="utf-8") as f:
+		records = json.load(f)
+	if not isinstance(records, list):
+		return {}
+	result: dict[str, set[str]] = {}
+	for record in records:
+		result.setdefault(record.get("dt"), set()).add(record.get("fieldname"))
+	return result
 
 
 def _collect_fixture_paths(base: str) -> list[tuple[str, str | None]]:
