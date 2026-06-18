@@ -270,6 +270,15 @@ def clean_property_setters_field_order(removed_fieldnames: set[str]) -> dict:
 		removed_fieldnames = set()
 
 	# Remove property setters for deleted/orphan fields (e.g. posa_*).
+	if removed_fieldnames:
+		for row in frappe.get_all(
+			"Property Setter",
+			filters=[["field_name", "in", list(removed_fieldnames)]],
+			pluck="name",
+		):
+			frappe.delete_doc("Property Setter", row, ignore_permissions=True)
+			stats["property_setters_removed"] += 1
+
 	for row in frappe.get_all(
 		"Property Setter",
 		filters=[["field_name", "like", "posa_%"]],
@@ -281,18 +290,10 @@ def clean_property_setters_field_order(removed_fieldnames: set[str]) -> dict:
 	for row in frappe.get_all(
 		"Property Setter",
 		filters={"property": "field_order"},
-		fields=["name", "value"],
+		pluck="name",
 	):
-		try:
-			fields = json.loads(row.value or "[]")
-		except json.JSONDecodeError:
-			continue
-		if not isinstance(fields, list):
-			continue
-		new_fields = [f for f in fields if f not in removed_fieldnames]
-		if new_fields != fields:
-			frappe.db.set_value("Property Setter", row.name, "value", json.dumps(new_fields))
-			stats["property_setters_updated"] += 1
+		frappe.delete_doc("Property Setter", row, ignore_permissions=True)
+		stats["property_setters_removed"] += 1
 
 	frappe.db.commit()
 	return stats
@@ -642,7 +643,31 @@ def disable_broken_reports() -> dict:
 
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
+	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
+	{
+		"dt": "Customer",
+		"fieldname": "custom_customer_name_in_arabic",
+		"primary_field": "customer_name_in_arabic",
+	},
+	{"dt": "Customer", "fieldname": "custom_customer_name_english", "primary_field": "customer_name"},
 ]
+
+IMPORTANT_FIELD_VISIBILITY_SETTERS = [
+	{"doc_type": "Customer", "field_name": "default_price_list", "property": "hidden"},
+	{"doc_type": "Sales Invoice", "field_name": "set_warehouse", "property": "hidden"},
+]
+
+CUSTOM_FIELD_INSERT_AFTER_FIXES = [
+	{"dt": "Customer", "fieldname": "customer_name_in_arabic", "insert_after": "customer_name"},
+]
+
+REMOVED_INSERT_AFTER_TARGETS = {
+	"customer_names": "customer_name",
+	"custom_customer_name_in_arabic": "customer_name",
+	"custom_customer_name_english": "customer_name_in_arabic",
+	"custom_document_no": "bill_no",
+	"document_no": "bill_no",
+}
 
 CALC_PARENT_DOCTYPES = [
 	"Quotation",
@@ -719,15 +744,19 @@ def enable_server_scripts() -> dict:
 
 def remove_redundant_custom_fields() -> dict:
 	"""Remove custom fields that duplicate standard fields (e.g. Document No vs bill_no)."""
-	stats = {"fields_removed": 0, "data_migrated": 0, "removed": []}
+	stats = {"fields_removed": 0, "data_migrated": 0, "insert_after_fixed": 0, "removed": []}
 
 	for spec in REDUNDANT_CUSTOM_FIELDS:
 		dt = spec["dt"]
 		fieldname = spec["fieldname"]
 		primary = spec["primary_field"]
-		cf_name = f"{dt}-{fieldname}"
+		cf_names = frappe.get_all(
+			"Custom Field",
+			filters={"dt": dt, "fieldname": fieldname},
+			pluck="name",
+		)
 
-		if not frappe.db.exists("Custom Field", cf_name):
+		if not cf_names:
 			continue
 
 		table = f"tab{dt}"
@@ -742,12 +771,13 @@ def remove_redundant_custom_fields() -> dict:
 			)
 			stats["data_migrated"] += migrated or 0
 
-		try:
-			frappe.delete_doc("Custom Field", cf_name, force=True, ignore_permissions=True)
-			stats["fields_removed"] += 1
-			stats["removed"].append(cf_name)
-		except Exception as e:
-			frappe.logger().error(f"new_atmta: cannot delete {cf_name} — {e}")
+		for cf_name in cf_names:
+			try:
+				frappe.delete_doc("Custom Field", cf_name, force=True, ignore_permissions=True)
+				stats["fields_removed"] += 1
+				stats["removed"].append(cf_name)
+			except Exception as e:
+				frappe.logger().error(f"new_atmta: cannot delete {cf_name} — {e}")
 
 	if stats["removed"]:
 		clean_property_setters_field_order(
@@ -755,7 +785,47 @@ def remove_redundant_custom_fields() -> dict:
 			| {"document_no", "custom_document_no"}
 		)
 
+	for spec in CUSTOM_FIELD_INSERT_AFTER_FIXES:
+		stats["insert_after_fixed"] += frappe.db.set_value(
+			"Custom Field",
+			{"dt": spec["dt"], "fieldname": spec["fieldname"]},
+			"insert_after",
+			spec["insert_after"],
+		) or 0
+
+	for old_target, new_target in REMOVED_INSERT_AFTER_TARGETS.items():
+		stats["insert_after_fixed"] += frappe.db.sql(
+			"""
+			UPDATE `tabCustom Field`
+			SET insert_after = %s
+			WHERE insert_after = %s
+			""",
+			(new_target, old_target),
+		) or 0
+
 	frappe.db.commit()
+	frappe.clear_cache(doctype="Customer")
+	frappe.clear_cache(doctype="Purchase Invoice")
+	return stats
+
+
+def remove_bad_layout_property_setters() -> dict:
+	"""Remove brittle form layout setters and restore critical standard fields."""
+	stats = {"field_order_removed": 0, "visibility_setters_removed": 0}
+
+	for name in frappe.get_all("Property Setter", filters={"property": "field_order"}, pluck="name"):
+		frappe.delete_doc("Property Setter", name, ignore_permissions=True)
+		stats["field_order_removed"] += 1
+
+	for spec in IMPORTANT_FIELD_VISIBILITY_SETTERS:
+		for name in frappe.get_all("Property Setter", filters=spec, pluck="name"):
+			frappe.delete_doc("Property Setter", name, ignore_permissions=True)
+			stats["visibility_setters_removed"] += 1
+
+	frappe.db.commit()
+	for doctype in ("Customer", "Supplier", "Item", "Sales Invoice", "Purchase Invoice"):
+		if frappe.db.exists("DocType", doctype):
+			frappe.clear_cache(doctype=doctype)
 	return stats
 
 
@@ -1062,6 +1132,8 @@ def run_integrity_fixes() -> dict:
 		"before": scan_broken_link_custom_fields(),
 		"shared_doctypes": ensure_shared_link_doctypes(),
 		"accounting_doctype_reset": remove_accounting_doctype_customizations(),
+		"redundant_fields": remove_redundant_custom_fields(),
+		"layout_property_setters": remove_bad_layout_property_setters(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"orphan_fields": remove_orphan_custom_fields(),
 		"striangle_tax_id": enforce_striangle_tax_id(),
@@ -1081,6 +1153,7 @@ def run_all() -> dict:
 		"shared_doctypes": ensure_shared_link_doctypes(),
 		"accounting_doctype_reset": remove_accounting_doctype_customizations(),
 		"redundant_fields": remove_redundant_custom_fields(),
+		"layout_property_setters": remove_bad_layout_property_setters(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"precision_setters": remove_precision_property_setters(),
 		"field_precision": ensure_calculation_field_precision(),

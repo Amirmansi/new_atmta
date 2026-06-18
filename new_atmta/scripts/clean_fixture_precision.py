@@ -14,11 +14,34 @@ LINK_NUMERIC_TYPES = {"Float", "Currency", "Percent", "Int"}
 # Custom fields that duplicate a standard field — remove custom, keep standard.
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
+	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
+	{"dt": "Customer", "fieldname": "custom_customer_name_in_arabic", "primary_field": "customer_name_in_arabic"},
+	{"dt": "Customer", "fieldname": "custom_customer_name_english", "primary_field": "customer_name"},
 ]
 
 FIELDNAMES_TO_STRIP_FROM_ORDER = {
 	"custom_document_no",
 	"document_no",
+	"customer_names",
+	"custom_customer_name_in_arabic",
+	"custom_customer_name_english",
+}
+
+CANONICAL_INSERT_AFTER = {
+	("Customer", "customer_name_in_arabic"): "customer_name",
+}
+
+REMOVED_INSERT_AFTER_TARGETS = {
+	"customer_names": "customer_name",
+	"custom_customer_name_in_arabic": "customer_name",
+	"custom_customer_name_english": "customer_name_in_arabic",
+	"custom_document_no": "bill_no",
+	"document_no": "bill_no",
+}
+
+IMPORTANT_FIELD_VISIBILITY_SETTERS = {
+	("Customer", "default_price_list", "hidden"),
+	("Sales Invoice", "set_warehouse", "hidden"),
 }
 
 
@@ -38,6 +61,19 @@ def _clean_field_order_value(value: str, extra_remove: set[str]) -> str | None:
 	return json.dumps(new_fields)
 
 
+def _fix_insert_after(record: dict) -> bool:
+	key = (record.get("dt"), record.get("fieldname"))
+	insert_after = CANONICAL_INSERT_AFTER.get(key)
+	if insert_after and record.get("insert_after") != insert_after:
+		record["insert_after"] = insert_after
+		return True
+	insert_after = REMOVED_INSERT_AFTER_TARGETS.get(record.get("insert_after"))
+	if insert_after:
+		record["insert_after"] = insert_after
+		return True
+	return False
+
+
 def _process_custom_field_file(filepath: str) -> set[str]:
 	with open(filepath, encoding="utf-8") as f:
 		records = json.load(f)
@@ -46,15 +82,20 @@ def _process_custom_field_file(filepath: str) -> set[str]:
 
 	removed_names: set[str] = set()
 	kept = []
+	changed = False
 	for record in records:
 		fieldname = record.get("fieldname") or ""
 		dt = record.get("dt") or ""
 		if any(r["dt"] == dt and r["fieldname"] == fieldname for r in REDUNDANT_CUSTOM_FIELDS):
 			removed_names.add(fieldname)
+			if record.get("name"):
+				removed_names.add(record["name"])
 			continue
+		if _fix_insert_after(record):
+			changed = True
 		kept.append(record)
 
-	if len(kept) != len(records):
+	if len(kept) != len(records) or changed:
 		with open(filepath, "w", encoding="utf-8") as f:
 			json.dump(kept, f, indent=2, ensure_ascii=False)
 			f.write("\n")
@@ -76,6 +117,10 @@ def _process_property_setter_file(filepath: str, removed_fieldnames: set[str]) -
 		field_name = record.get("field_name") or ""
 		property_name = record.get("property") or ""
 
+		if property_name == "field_order":
+			updated += 1
+			continue
+
 		if property_name == "precision":
 			updated += 1
 			continue
@@ -84,11 +129,9 @@ def _process_property_setter_file(filepath: str, removed_fieldnames: set[str]) -
 			updated += 1
 			continue
 
-		if property_name == "field_order":
-			new_value = _clean_field_order_value(record.get("value"), removed_fieldnames)
-			if new_value != record.get("value"):
-				record["value"] = new_value
-				updated += 1
+		if (record.get("doc_type"), field_name, property_name) in IMPORTANT_FIELD_VISIBILITY_SETTERS:
+			updated += 1
+			continue
 
 		kept.append(record)
 
