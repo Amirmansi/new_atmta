@@ -5,6 +5,17 @@ app_description = "ATMTA Multi-Site Customizations - All sites, all custom field
 app_email = "amirahmd12300@gmail.com"
 app_license = "mit"
 
+# ZATCA queue isolation: route ksa_compliance realtime submission jobs to a
+# dedicated `zatca` RQ queue so they never contend with UI-critical jobs.
+# Defensive monkeypatch (falls back to original behaviour on any error); lives
+# here so it survives ksa_compliance updates instead of editing the vendor app.
+try:
+    from new_atmta.overrides.zatca_queue import apply_zatca_queue_patch as _apply_zatca_queue_patch
+
+    _apply_zatca_queue_patch()
+except Exception:
+    pass
+
 # After app install: auto-import this site's fixtures
 after_install = "new_atmta.install.after_install"
 after_migrate = "new_atmta.install.after_migrate"
@@ -25,7 +36,14 @@ override_whitelisted_methods = {
 
 boot_session = "new_atmta.desk_cache.boot_session"
 
-before_request = ["new_atmta.desk_cache.ensure_sidebar_patch"]
+before_request = [
+	"new_atmta.desk_cache.ensure_sidebar_patch",
+	"new_atmta.overrides.zatca_queue.apply_zatca_queue_patch_hook",
+]
+
+# Runs before every background job: guarantees ZATCA queue routing is active in
+# worker processes (covers invoices submitted from background jobs / imports).
+before_job = ["new_atmta.overrides.zatca_queue.apply_zatca_queue_patch_hook"]
 
 doc_events = {
 	"Workspace": {
