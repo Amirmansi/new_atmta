@@ -1344,6 +1344,8 @@ def clear_all_caches() -> None:
 
 def run_integrity_fixes() -> dict:
 	"""Focused data integrity repair for missing DocType references."""
+	from new_atmta.series_guard import apply_series_integrity_fixes
+
 	results = {
 		"before": scan_broken_link_custom_fields(),
 		"shared_doctypes": ensure_shared_link_doctypes(),
@@ -1354,6 +1356,7 @@ def run_integrity_fixes() -> dict:
 		"broken_fetch_fields": remove_broken_fetch_custom_fields(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"orphan_fields": remove_orphan_custom_fields(),
+		"series": apply_series_integrity_fixes(),
 		"striangle_tax_id": enforce_striangle_tax_id(),
 	}
 	clear_all_caches()
@@ -1363,6 +1366,8 @@ def run_integrity_fixes() -> dict:
 
 def run_all() -> dict:
 	"""Run all maintenance tasks. Called automatically on migrate."""
+	from new_atmta.series_guard import apply_series_integrity_fixes
+
 	frappe.logger().info(f"new_atmta: running site maintenance on {frappe.local.site}")
 
 	results = {
@@ -1385,6 +1390,7 @@ def run_all() -> dict:
 		"number_cards": fix_number_cards(),
 		"reports": disable_broken_reports(),
 		"expense_entry": ensure_expense_entry_ref_no_required(),
+		"series": apply_series_integrity_fixes(),
 		"striangle_tax_id": enforce_striangle_tax_id(),
 		"performance": apply_performance_settings(),
 	}

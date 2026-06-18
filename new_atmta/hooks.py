@@ -50,6 +50,17 @@ doc_events = {
 		"on_update": "new_atmta.desk_cache.on_workspace_change",
 		"on_trash": "new_atmta.desk_cache.on_workspace_change",
 	},
+	"Sales Invoice": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"POS Invoice": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Delivery Note": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Sales Order": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Purchase Invoice": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Purchase Order": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Purchase Receipt": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Stock Entry": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Stock Reconciliation": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Payment Entry": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
+	"Journal Entry": {"before_insert": "new_atmta.series_guard.apply_naming_series_guard"},
 }
 
 # Unified customizations shipped to ALL sites (core master + ledger DocTypes).
