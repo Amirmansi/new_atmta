@@ -14,6 +14,8 @@ LINK_NUMERIC_TYPES = {"Float", "Currency", "Percent", "Int"}
 # Custom fields that duplicate a standard field — remove custom, keep standard.
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
+	{"dt": "Cost Center", "fieldname": "abbr", "primary_field": None},
+	{"dt": "Sales Invoice", "fieldname": "cost_center_abbr", "primary_field": None},
 	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
 	{"dt": "Customer", "fieldname": "cost_center", "primary_field": None},
 	{"dt": "Customer", "fieldname": "custom_whatsapp_phone_nubmer", "primary_field": "custom_whatsapp_no"},
@@ -28,6 +30,8 @@ REDUNDANT_CUSTOM_FIELDS = [
 FIELDNAMES_TO_STRIP_FROM_ORDER = {
 	"custom_document_no",
 	"document_no",
+	"abbr",
+	"cost_center_abbr",
 	"customer_names",
 	"cost_center",
 	"custom_item_series_no",

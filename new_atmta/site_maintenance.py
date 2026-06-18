@@ -653,6 +653,8 @@ def disable_broken_reports() -> dict:
 
 REDUNDANT_CUSTOM_FIELDS = [
 	{"dt": "Purchase Invoice", "fieldname": "custom_document_no", "primary_field": "bill_no"},
+	{"dt": "Cost Center", "fieldname": "abbr", "primary_field": None},
+	{"dt": "Sales Invoice", "fieldname": "cost_center_abbr", "primary_field": None},
 	{"dt": "Customer", "fieldname": "customer_names", "primary_field": "customer_name"},
 	{"dt": "Customer", "fieldname": "cost_center", "primary_field": None},
 	{"dt": "Customer", "fieldname": "custom_whatsapp_phone_nubmer", "primary_field": "custom_whatsapp_no"},
@@ -902,9 +904,9 @@ def restore_ksa_payment_entry_customizations() -> dict:
 	stats = {
 		"applied": False,
 		"custom_fields_created": 0,
-		"custom_fields_updated": 0,
+		"custom_fields_existing": 0,
 		"property_setters_created": 0,
-		"property_setters_updated": 0,
+		"property_setters_existing": 0,
 	}
 
 	if "ksa_compliance" not in frappe.get_installed_apps():
@@ -930,10 +932,7 @@ def restore_ksa_payment_entry_customizations() -> dict:
 			continue
 		doc_data = _clean_import_record(record, "Custom Field")
 		if frappe.db.exists("Custom Field", name):
-			doc = frappe.get_doc("Custom Field", name)
-			doc.update(doc_data)
-			doc.save(ignore_permissions=True)
-			stats["custom_fields_updated"] += 1
+			stats["custom_fields_existing"] += 1
 		else:
 			frappe.get_doc(doc_data).insert(ignore_permissions=True)
 			stats["custom_fields_created"] += 1
@@ -944,10 +943,7 @@ def restore_ksa_payment_entry_customizations() -> dict:
 			continue
 		doc_data = _clean_import_record(record, "Property Setter")
 		if frappe.db.exists("Property Setter", name):
-			doc = frappe.get_doc("Property Setter", name)
-			doc.update(doc_data)
-			doc.save(ignore_permissions=True)
-			stats["property_setters_updated"] += 1
+			stats["property_setters_existing"] += 1
 		else:
 			frappe.get_doc(doc_data).insert(ignore_permissions=True)
 			stats["property_setters_created"] += 1
@@ -1050,6 +1046,76 @@ def remove_broken_link_custom_fields() -> dict:
 	for row in stats["removed"]:
 		frappe.clear_cache(doctype=row["dt"])
 	return stats
+
+
+def remove_broken_fetch_custom_fields() -> dict:
+	"""Delete derived custom fields whose fetch_from points to missing metadata."""
+	stats = {"fields_removed": 0, "removed": []}
+
+	for row in frappe.get_all(
+		"Custom Field",
+		filters=[["fetch_from", "is", "set"]],
+		fields=["name", "dt", "fieldname", "fetch_from"],
+	):
+		if not _is_broken_fetch_from(row.dt, row.fetch_from):
+			continue
+		try:
+			frappe.delete_doc("Custom Field", row.name, force=True, ignore_permissions=True)
+			stats["fields_removed"] += 1
+			stats["removed"].append(
+				{
+					"name": row.name,
+					"dt": row.dt,
+					"fieldname": row.fieldname,
+					"fetch_from": row.fetch_from,
+				}
+			)
+		except Exception as e:
+			frappe.logger().error(f"new_atmta: cannot delete broken fetch field {row.name} — {e}")
+
+	if stats["removed"]:
+		clean_property_setters_field_order({row["fieldname"] for row in stats["removed"]})
+
+	frappe.db.commit()
+	for row in stats["removed"]:
+		frappe.clear_cache(doctype=row["dt"])
+	return stats
+
+
+def _is_broken_fetch_from(parent_dt: str, fetch_from: str | None) -> bool:
+	if not fetch_from or "." not in fetch_from:
+		return False
+	source_field, target_field = fetch_from.split(".", 1)
+	if not source_field or not target_field:
+		return False
+
+	source_df = _get_field_definition(parent_dt, source_field)
+	if not source_df:
+		return True
+
+	target_dt = source_df.get("options") if source_df.get("fieldtype") == "Link" else None
+	if not target_dt:
+		return False
+	if not frappe.db.exists("DocType", target_dt):
+		return True
+	return not _get_field_definition(target_dt, target_field)
+
+
+def _get_field_definition(parent_dt: str, fieldname: str) -> dict | None:
+	docfield = frappe.db.get_value(
+		"DocField",
+		{"parent": parent_dt, "fieldname": fieldname},
+		["fieldname", "fieldtype", "options"],
+		as_dict=True,
+	)
+	if docfield:
+		return docfield
+	return frappe.db.get_value(
+		"Custom Field",
+		{"dt": parent_dt, "fieldname": fieldname},
+		["fieldname", "fieldtype", "options"],
+		as_dict=True,
+	)
 
 
 def scan_broken_link_custom_fields() -> dict:
@@ -1285,6 +1351,7 @@ def run_integrity_fixes() -> dict:
 		"redundant_fields": remove_redundant_custom_fields(),
 		"layout_property_setters": remove_bad_layout_property_setters(),
 		"ksa_payment_entry": restore_ksa_payment_entry_customizations(),
+		"broken_fetch_fields": remove_broken_fetch_custom_fields(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"orphan_fields": remove_orphan_custom_fields(),
 		"striangle_tax_id": enforce_striangle_tax_id(),
@@ -1306,6 +1373,7 @@ def run_all() -> dict:
 		"redundant_fields": remove_redundant_custom_fields(),
 		"layout_property_setters": remove_bad_layout_property_setters(),
 		"ksa_payment_entry": restore_ksa_payment_entry_customizations(),
+		"broken_fetch_fields": remove_broken_fetch_custom_fields(),
 		"broken_link_fields": remove_broken_link_custom_fields(),
 		"precision_setters": remove_precision_property_setters(),
 		"field_precision": ensure_calculation_field_precision(),
